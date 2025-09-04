@@ -26,10 +26,11 @@ export const sessions = pgTable(
 // User storage table.
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: varchar("email").unique(),
+  username: varchar("username").unique().notNull(),
+  password: varchar("password").notNull(), // hashed password
+  email: varchar("email"),
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
-  profileImageUrl: varchar("profile_image_url"),
   role: varchar("role").notNull().default("user"), // 'user' or 'admin'
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -64,11 +65,26 @@ export const processingJobs = pgTable("processing_jobs", {
 
 // Create schemas
 export const insertUserSchema = createInsertSchema(users).pick({
+  username: true,
+  password: true,
   email: true,
   firstName: true,
   lastName: true,
-  profileImageUrl: true,
   role: true,
+});
+
+export const loginSchema = z.object({
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+});
+
+export const createUserSchema = z.object({
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  email: z.string().email().optional(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  role: z.enum(["user", "admin"]).default("user"),
 });
 
 export const insertBreachRecordSchema = createInsertSchema(breachRecords).pick({

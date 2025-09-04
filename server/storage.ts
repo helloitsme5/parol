@@ -11,11 +11,13 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, sql, count, desc } from "drizzle-orm";
+import bcrypt from "bcrypt";
 
 export interface IStorage {
   // User operations
   getUser(id: string): Promise<User | undefined>;
-  upsertUser(user: UpsertUser): Promise<User>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  createUser(user: { username: string; password: string; email?: string; firstName?: string; lastName?: string; role?: string }): Promise<User>;
   
   // Breach record operations
   createBreachRecord(record: InsertBreachRecord): Promise<BreachRecord>;
@@ -31,6 +33,9 @@ export interface IStorage {
   getTotalRecords(): Promise<number>;
   getTotalFiles(): Promise<number>;
   getPendingJobs(): Promise<number>;
+  
+  // Admin operations
+  getAllUsers(): Promise<User[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -39,19 +44,30 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async upsertUser(userData: UpsertUser): Promise<User> {
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+
+  async createUser(userData: { username: string; password: string; email?: string; firstName?: string; lastName?: string; role?: string }): Promise<User> {
+    const hashedPassword = await bcrypt.hash(userData.password, 10);
+    
     const [user] = await db
       .insert(users)
-      .values(userData)
-      .onConflictDoUpdate({
-        target: users.id,
-        set: {
-          ...userData,
-          updatedAt: new Date(),
-        },
+      .values({
+        username: userData.username,
+        password: hashedPassword,
+        email: userData.email,
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        role: userData.role || "user",
       })
       .returning();
     return user;
+  }
+
+  async verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
+    return bcrypt.compare(password, hashedPassword);
   }
 
   async createBreachRecord(record: InsertBreachRecord): Promise<BreachRecord> {
@@ -128,6 +144,10 @@ export class DatabaseStorage implements IStorage {
       .where(sql`${processingJobs.status} IN ('pending', 'processing')`);
     
     return result[0]?.count || 0;
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return db.select().from(users).orderBy(desc(users.createdAt));
   }
 }
 

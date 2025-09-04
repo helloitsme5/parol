@@ -1,12 +1,13 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupAuth, isAdmin, getCurrentUser } from "./auth";
 import { fileProcessor } from "./fileProcessor";
 import multer from "multer";
 import { z } from "zod";
 import path from "path";
 import fs from "fs";
+import { loginSchema, createUserSchema } from "@shared/schema";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -16,24 +17,6 @@ const upload = multer({
   },
 });
 
-// Admin role check middleware
-const isAdmin = async (req: any, res: any, next: any) => {
-  try {
-    const userId = req.user?.claims?.sub;
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    const user = await storage.getUser(userId);
-    if (!user || user.role !== 'admin') {
-      return res.status(403).json({ message: "Admin access required" });
-    }
-
-    next();
-  } catch (error) {
-    res.status(500).json({ message: "Error checking admin status" });
-  }
-};
 
 const searchSchema = z.object({
   username: z.string().min(1).max(255),
@@ -44,19 +27,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
   await setupAuth(app);
 
   // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+  app.post('/api/auth/login', async (req, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      res.json(user);
+      const { username, password } = loginSchema.parse(req.body);
+      
+      const user = await storage.getUserByUsername(username);
+      if (!user) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      const isValidPassword = await (storage as any).verifyPassword(password, user.password);
+      if (!isValidPassword) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      req.session.userId = user.id;
+      
+      // Don't send password in response
+      const { password: _, ...userWithoutPassword } = user;
+      res.json(userWithoutPassword);
     } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid input" });
+      }
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Login failed" });
     }
   });
 
-  // Public search endpoint for users
-  app.post('/api/search', isAuthenticated, async (req, res) => {
+  app.post('/api/auth/logout', (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: "Logout failed" });
+      }
+      res.json({ message: "Logged out successfully" });
+    });
+  });
+
+  app.get('/api/auth/user', getCurrentUser, async (req: any, res) => {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    // Don't send password in response
+    const { password, ...userWithoutPassword } = req.user;
+    res.json(userWithoutPassword);
+  });
+
+  // Public search endpoint for users (no auth required)
+  app.post('/api/search', async (req, res) => {
     try {
       const { username } = searchSchema.parse(req.body);
       
@@ -77,7 +96,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin endpoints
-  app.get('/api/admin/stats', isAuthenticated, isAdmin, async (req, res) => {
+  app.get('/api/admin/stats', isAdmin, async (req, res) => {
     try {
       const [totalRecords, filesProcessed, queueCount] = await Promise.all([
         storage.getTotalRecords(),
@@ -96,7 +115,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/admin/jobs', isAuthenticated, isAdmin, async (req, res) => {
+  app.get('/api/admin/jobs', isAdmin, async (req, res) => {
     try {
       const jobs = await storage.getProcessingJobs();
       const processingStatus = fileProcessor.getProcessingStatus();
@@ -111,7 +130,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/admin/upload', isAuthenticated, isAdmin, upload.single('file'), async (req, res) => {
+  app.post('/api/admin/upload', isAdmin, upload.single('file'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -164,6 +183,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       res.status(500).json({ message: "Upload failed" });
+    }
+  });
+
+  // Admin user management
+  app.get('/api/admin/users', isAdmin, async (req, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      // Don't send passwords in response
+      const usersWithoutPasswords = users.map(({ password, ...user }) => user);
+      res.json(usersWithoutPasswords);
+    } catch (error) {
+      console.error("Users fetch error:", error);
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  app.post('/api/admin/users', isAdmin, async (req, res) => {
+    try {
+      const userData = createUserSchema.parse(req.body);
+      
+      // Check if username already exists
+      const existingUser = await storage.getUserByUsername(userData.username);
+      if (existingUser) {
+        return res.status(400).json({ message: "Username already exists" });
+      }
+
+      const user = await storage.createUser(userData);
+      
+      // Don't send password in response
+      const { password, ...userWithoutPassword } = user;
+      res.json(userWithoutPassword);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid input", errors: error.errors });
+      }
+      console.error("User creation error:", error);
+      res.status(500).json({ message: "Failed to create user" });
     }
   });
 
