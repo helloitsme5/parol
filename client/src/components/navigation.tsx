@@ -7,8 +7,17 @@ export default function Navigation() {
   const { user } = useAuth();
   const [location] = useLocation();
 
-  const handleLogout = () => {
-    window.location.href = "/api/logout";
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      window.location.href = '/';
+    } catch (error) {
+      console.error('Logout error:', error);
+      window.location.href = '/';
+    }
   };
 
   return (
@@ -30,7 +39,7 @@ export default function Navigation() {
               <SearchIcon className="mr-2 h-4 w-4" />
               User Search
             </Link>
-            {user?.role === 'admin' && (
+            {user && (user as any).role === 'admin' ? (
               <Link 
                 href="/admin"
                 className={`flex items-center transition-colors ${
@@ -41,13 +50,13 @@ export default function Navigation() {
                 <SettingsIcon className="mr-2 h-4 w-4" />
                 Admin Panel
               </Link>
-            )}
+            ) : null}
             <div className="flex items-center space-x-2">
-              {user && (
-                <span className="text-sm text-muted-foreground" data-testid="text-user-email">
-                  {user.email || 'User'}
+              {user ? (
+                <span className="text-sm text-muted-foreground" data-testid="text-user-info">
+                  {(user as any).username} ({(user as any).role})
                 </span>
-              )}
+              ) : null}
               <Button 
                 onClick={handleLogout}
                 variant="outline"

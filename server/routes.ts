@@ -8,6 +8,7 @@ import { z } from "zod";
 import path from "path";
 import fs from "fs";
 import { loginSchema, createUserSchema } from "@shared/schema";
+import "./types";
 
 // Configure multer for file uploads
 const upload = multer({

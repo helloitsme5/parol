@@ -8,8 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { isUnauthorizedError } from "@/lib/authUtils";
 import { UserIcon, AlertTriangleIcon, CheckCircleIcon, ShieldCheckIcon } from "lucide-react";
 
 const searchSchema = z.object({
@@ -37,24 +35,24 @@ export default function UserSearch() {
 
   const searchMutation = useMutation({
     mutationFn: async (data: SearchForm) => {
-      const response = await apiRequest("POST", "/api/search", data);
+      const response = await fetch('/api/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Search failed');
+      }
+      
       return response.json();
     },
     onSuccess: (data: SearchResult) => {
       setSearchResult(data);
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
       toast({
         title: "Search Failed",
         description: "Unable to search for username. Please try again.",

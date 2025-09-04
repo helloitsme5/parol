@@ -4,8 +4,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { isUnauthorizedError } from "@/lib/authUtils";
 import { 
   DatabaseIcon, 
   FileTextIcon, 
@@ -16,8 +14,10 @@ import {
   BarChart3Icon,
   ActivityIcon,
   SettingsIcon,
-  FileUpIcon
+  FileUpIcon,
+  UsersIcon
 } from "lucide-react";
+import AdminUserManagement from "@/components/admin-user-management";
 
 interface AdminStats {
   totalRecords: number;
@@ -94,17 +94,6 @@ export default function AdminPanel() {
       }
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "Admin access required. Redirecting...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
       toast({
         title: "Upload Failed",
         description: error.message || "Failed to upload file.",
@@ -207,6 +196,15 @@ export default function AdminPanel() {
               >
                 <ActivityIcon className="mr-2 h-4 w-4" />
                 Activity
+              </Button>
+              <Button
+                variant={activeSection === "users" ? "default" : "ghost"}
+                className="w-full justify-start"
+                onClick={() => setActiveSection("users")}
+                data-testid="button-nav-users"
+              >
+                <UsersIcon className="mr-2 h-4 w-4" />
+                Users
               </Button>
             </nav>
           </CardContent>
@@ -378,6 +376,11 @@ export default function AdminPanel() {
               )}
             </CardContent>
           </Card>
+        )}
+
+        {/* User Management */}
+        {activeSection === "users" && (
+          <AdminUserManagement />
         )}
       </div>
     </div>
