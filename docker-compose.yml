@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # PostgreSQL ma'lumotlar bazasi
+  postgres:
+    image: postgres:15-alpine
+    container_name: securecheck_db
+    environment:
+      POSTGRES_DB: securecheck
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - securecheck_network
+
+  # SecureCheck ilovasi
+  app:
+    build: .
+    container_name: securecheck_app
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:password123@postgres:5432/securecheck
+      SESSION_SECRET: your-session-secret-here
+      REPL_ID: your-repl-id
+      REPLIT_DOMAINS: localhost
+      ISSUER_URL: https://replit.com/oidc
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres
+    volumes:
+      - ./uploads:/app/uploads
+    networks:
+      - securecheck_network
+
+volumes:
+  postgres_data:
+
+networks:
+  securecheck_network:
+    driver: bridge
